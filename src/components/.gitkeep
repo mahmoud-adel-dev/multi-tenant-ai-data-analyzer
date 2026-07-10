@@ -1,0 +1,2 @@
+# Reusable UI components
+# Organized as: ui/ (primitives), shared/ (composed), features/ (domain-specific)
