@@ -17,10 +17,13 @@ a functioning two-plane platform:
   report → optional AI narrative), organization-based multi-tenancy with
   server-enforced RBAC, concurrency-safe billing/quota primitives, hardened
   auth/secrets/files/headers, structured logging, health endpoints, audit log,
-  Docker/compose/CI delivery artifacts, and 41 passing unit tests plus a
-  MongoDB-gated isolation/concurrency suite.
+  Docker/compose/CI delivery artifacts, 55 passing TypeScript tests, and 62
+  passing Python tests (with the MongoDB-gated TypeScript suite skipped when
+  its test database is unavailable).
 
-The build is green: `typecheck ✓ · lint ✓ · vitest 41 passed ✓ · next build ✓`.
+The verified local checks are green: `typecheck ✓ · vitest 55 passed ✓ ·
+pytest 62 passed ✓ · next build ✓`. ESLint completes with three non-blocking
+unused-variable warnings.
 
 ## Architecture
 
@@ -128,21 +131,23 @@ health/readiness endpoints checking DB, storage, analytics reachability.
 | Suite | Result |
 |---|---|
 | `npm run typecheck` | ✅ pass (0 errors) |
-| `npm run lint` | ✅ pass (`next lint`: no warnings/errors) |
-| `npm test` (Vitest) | ✅ **41 passed**, 3 skipped (DB-gated suite skips without local MongoDB; runs in CI where Mongo exists) |
+| `npm run lint` | ✅ pass with 3 unused-variable warnings (`next lint` deprecation also reported) |
+| `npm test` (Vitest) | ✅ **55 passed**, 3 skipped (DB-gated suite skips without its test database) |
 | `npm audit --omit=dev` | ✅ clean except one residual high in bundled `postcss` (fix requires Next 16 major upgrade — documented below) |
 | `next build` (Next 15.5.23, upgraded from vulnerable 15.3.4) | ✅ pass — 22 routes compiled |
 | Worker bundle | ✅ builds and boots with fail-fast env check |
-| `pytest` | ⛔ BLOCKED in authoring environment (no Python runtime installed) — suite written, executed by CI |
+| `pytest` | ✅ **62 passed** locally; 2 dependency/deprecation warnings |
 
 ## Performance
 
-Practical limits per plan (Free): 10MB upload / 100k rows per dataset / 20 jobs
-per month / 50MB storage. Engine caps: 250MB absolute upload ceiling, 5M rows,
-500 columns, XLSX ≤50 sheets & 5M cells. Polars lazy/streaming parsing avoids
-full-file buffering in Python; Node never holds datasets beyond the upload
-transaction. Known limits: single worker process processes jobs sequentially
-(scale replicas horizontally); dashboard payloads embed aggregated series
+Temporary practical limits for the Free plan: 100MB per upload / 100k rows per
+dataset / 20 jobs per month / 1GB storage. Engine caps: 250MB absolute upload
+ceiling, 5M rows, 500 columns, XLSX ≤50 sheets & 5M cells. The current upload,
+worker, and FastAPI boundaries materialize file buffers in memory; direct
+multipart upload and bounded streaming are future work. Known limits: a single
+worker process processes jobs sequentially. Multiple workers can claim jobs,
+but result side effects need the idempotency hardening described in
+`FUTURE_ARCHITECTURE.md` before aggressive scaling. Dashboard payloads embed aggregated series
 (truncated to 400 points/trend) — petabyte-class datasets out of scope.
 
 ## Production checklist
@@ -153,11 +158,11 @@ transaction. Known limits: single worker process processes jobs sequentially
 | Deterministic KPIs + provenance contract | DONE |
 | Auto dashboard generation + ECharts rendering | DONE |
 | Professional report + print-to-PDF | DONE |
-| Supported formats parse reliably; invalid fail safely | DONE (CSV/TSV/XLSX/JSON verified via Python tests design + TS validation tests; runtime pytest execution BLOCKED locally, CI-covered) |
+| Supported formats parse reliably; invalid fail safely | DONE for CSV/TSV/XLSX/JSON (verified by Python and TypeScript tests) |
 | Object storage abstraction | DONE (local driver exercised; S3/R2 path code-complete, runtime verification BLOCKED: needs bucket credentials) |
 | Org multi-tenancy + RBAC + invitations | DONE |
 | Subscription/usage model + atomic quotas | DONE (payment rails PARTIAL → manual mode; Stripe BLOCKED: needs account) |
-| Secure API keys (hashed/expiry/rate-limited) | DONE |
+| Secure API keys | PARTIAL (hashed; analyze submission enforces expiry/rate limits; job/result read endpoints need enforcement parity) |
 | Secrets externalized + encrypted provider keys | DONE |
 | Tenant isolation tests | DONE (CI executes with MongoDB) |
 | Async jobs, retries, idempotency, stall reclaim | DONE |

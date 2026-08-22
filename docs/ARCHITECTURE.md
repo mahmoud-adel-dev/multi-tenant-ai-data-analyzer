@@ -22,7 +22,7 @@ clearly labeled as narrative.
                                    ▼
                        ┌───────────────────────┐
                        │  AnalysisJob queue    │   MongoDB atomic-claim queue
-                       │  (claim/retry/stall)  │   (BullMQ-swappable interface)
+                       │  (claim/retry/stall)  │   (direct Mongo lease queue)
                        └──────────┬────────────┘
                                   │ claims
                                   ▼
@@ -58,7 +58,8 @@ Redis:     optional distributed rate limiting
    (magic bytes/limits/sanitization) → **atomic quota reservation** → object
    storage put → `Dataset` + `AnalysisJob(QUEUED)` rows → returns job ID.
 2. Worker claims the job (atomic `findOneAndUpdate`, stalled-lock reclaim),
-   streams the original from storage to the Python service.
+   loads the original from storage and sends it to the Python service. The
+   current path materializes the file in memory; bounded streaming is planned.
 3. Python parses (guarded), profiles, computes KPIs/trends/correlations/
    outliers/segments/forecasts and plans dashboard + report deterministically.
 4. Worker Zod-validates the contract, persists results, meters usage,
@@ -93,9 +94,10 @@ resolved through a DB-verified membership — see `docs/MULTI_TENANCY.md`.
 
 ## Decisions & tradeoffs
 
-- **Mongo-backed queue** instead of Redis/BullMQ by default: verifiable in every
-  environment while remaining production-grade (atomic claims, retries, stall
-  detection). The queue interface is driver-shaped for a BullMQ swap.
+- **Mongo-backed queue** instead of Redis/BullMQ by default: it provides atomic
+  claims, retries, and stall detection with at-least-once delivery. A formal
+  queue port and any broker migration are future work documented in
+  `docs/FUTURE_ARCHITECTURE.md`.
 - **JWT sessions** carry identity only; authorization always re-reads the DB,
   eliminating stale-role risk without a session revocation infrastructure.
 - **Print-to-PDF** reports instead of bundling headless Chrome; server-side PDF

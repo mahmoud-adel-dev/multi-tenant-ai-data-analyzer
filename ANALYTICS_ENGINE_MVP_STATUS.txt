@@ -31,7 +31,7 @@ Every headline claim below is backed by an executed test on this machine:
   * Automated MVP acceptance suite (scripts/verify-mvp.mjs): 33/33 checks PASS,
     covering every criterion of task section 41 that is implementable without
     a configured LLM.
-  * Python tests: 62 passed. TypeScript tests: 54 passed. eslint: 0 errors.
+  * Python tests: 62 passed. TypeScript tests: 55 passed. eslint: 0 errors.
     tsc --noEmit clean. next build succeeds. Worker bundle rebuilt and running
     under PM2 (web :3001, worker, uvicorn :8000).
 
@@ -476,7 +476,7 @@ Python (pytest, analytics-service): 62 passed.
   regression, AOV ratio, direction-label-consistency property, volatility
   override, insufficient-data, business-notable classification, method allow-
   list, forecast baseline/continuity/eligibility).
-TypeScript (vitest): 54 passed. Includes contract normalization regressions
+TypeScript (vitest): 55 passed. Includes contract normalization regressions
   (legacy null lists → [], moving-average nullish, provenance defaults,
   prompt-injection containment suites untouched and green).
 Static: tsc --noEmit clean; eslint 0 errors (6 stylistic warnings);

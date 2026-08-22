@@ -8,8 +8,8 @@ Matrix reflects the state **before** transformation → **after** transformation
 |---|---|---|---|---|---|---|---|---|---|---|---|---|---|
 | Email/password auth | ✅ login/register | NextAuth route | register action | Tenant | — | — | — | — | — | — | — | PARTIAL (stale-role JWT, fallback secret) | COMPLETE (hardened) |
 | Session management | ✅ | NextAuth JWT | DAL guards | — | — | — | — | — | — | — | — | PARTIAL | COMPLETE |
-| API key create/revoke/delete | ✅ | v1 auth via keys | api-keys actions | ApiKey | — | — | — | — | — | — | — | PARTIAL (no expiry/rate limits) | COMPLETE |
-| Public analyze API | — | `/api/v1/analyze` sync | pipeline | ExtractedData | — | LLM only | — | — | — | — | — | MOCK-ADJACENT (LLM-only, sync) | PARTIAL→async job submit + status; compute real (BLOCKED external AI config) |
+| API key create/revoke/delete | ✅ | v1 auth via keys | api-keys actions | ApiKey | — | — | — | — | — | — | — | PARTIAL (no expiry/rate limits) | PARTIAL (CRUD complete; analyze submission checks expiry/rate limits; read endpoints need parity) |
+| Public analyze API | — | `/api/v1/analyze` sync | pipeline | ExtractedData | — | LLM only | — | — | — | — | — | MOCK-ADJACENT (LLM-only, sync) | COMPLETE for async submit/status/result; AI narrative remains optional and provider-dependent |
 | File upload (dashboard) | ✅ 2 competing forms | — | upload.ts (fake) + data-extraction.ts (sync) | ExtractedData | — | none | none | none | — | — | — | BROKEN/MOCK | COMPLETE (single async pipeline) |
 | CSV/XLSX/JSON parsing | n/a | n/a | excel/json parsers (Node, for LLM text) | — | planned | none | — | — | — | — | — | PARTIAL | COMPLETE (Python: Polars/openpyxl with security limits) |
 | PDF extraction | upload accepted it | — | pipeline | — | — | — | — | — | — | — | — | PLACEHOLDER (fabricated text) | MISSING by design (disabled until real engine) |
@@ -18,7 +18,7 @@ Matrix reflects the state **before** transformation → **after** transformation
 | Data quality engine | — | — | — | — | implemented | findings w/ severity | — | — | — | — | — | MISSING | COMPLETE (Python) |
 | Domain inference | — | — | — | — | implemented | scored candidates | — | — | — | — | — | MISSING | COMPLETE (Python) |
 | Descriptive statistics / KPIs | — | — | — | — | implemented | provenance-tagged metrics | — | — | — | — | — | MISSING | COMPLETE (Python) |
-| Time series & forecasting | — | — | — | — | implemented (ETS baseline + optional SARIMAX-lite) | guarded by data sufficiency | — | — | — | — | — | MISSING | COMPLETE (Python; tests BLOCKED: no local Python runtime) |
+| Time series & forecasting | — | — | — | — | implemented (ETS baseline + optional SARIMAX-lite) | guarded by data sufficiency | — | — | — | — | — | MISSING | COMPLETE (Python; locally tested) |
 | Correlation analysis | — | — | — | — | implemented Pearson/Spearman | — | — | — | — | — | — | MISSING | COMPLETE |
 | Outlier detection | — | — | — | — | IQR + robust z-score (+IsolationForest when justified) | — | — | — | — | — | — | MISSING | COMPLETE |
 | Segmentation / clustering / RFM | — | — | — | — | k-means (k-selection guarded) + RFM when domain fits | — | — | — | — | — | — | MISSING | COMPLETE |
@@ -35,5 +35,5 @@ Matrix reflects the state **before** transformation → **after** transformation
 | Admin panel | models page only | — | ai-models actions | AiModelConfig | — | — | — | — | overview+models+audit+failed jobs | — | — | PARTIAL (dead links) | COMPLETE (dead links removed/implemented) |
 | Health/readiness | — | `/api/health`, `/api/ready` | — | — | pinged | — | — | — | — | — | — | MISSING | COMPLETE |
 | Observability | — | — | logger used across pipeline | — | structured logging | — | — | — | — | — | — | MISSING | PARTIAL (logs+counters; OTel/Sentry export hooks stubbed, BLOCKED: needs vendor DSNs) |
-| Tests | — | — | — | — | pytest suite | vitest suite | integration suite | — | tenant-isolation tests | — | — | MISSING | PARTIAL (TS suites run here; pytest/E2E BLOCKED: no Python/browser runtimes installed) |
+| Tests | — | — | — | — | pytest suite | vitest suite | integration scripts | — | tenant-isolation tests | — | — | MISSING | PARTIAL (55 TypeScript + 62 Python tests pass; HTTP login smoke exists; full browser E2E is still missing) |
 | Docker/CI/docs | — | — | — | — | Dockerfile | Dockerfile | compose files | GitHub Actions | docs/ suite | — | — | MISSING | COMPLETE artifacts (image builds BLOCKED: no Docker daemon in env) |

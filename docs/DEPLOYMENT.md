@@ -2,8 +2,9 @@
 
 ## Environments
 
-- **Local:** `docker compose up` (mongo/redis/minio/analytics/web/worker) or
-  bare `npm run dev` + separate analytics service.
+- **Local:** use `npm run dev:all` for the verified web/worker/analytics
+  workflow, with MongoDB configured separately. The Compose topology is a
+  reference pending the validation items in `docs/DOCKER.md`.
 - **Staging:** compose production file or your orchestrator, managed MongoDB,
   real S3 bucket, Stripe test mode when integrated.
 - **Production:** same topology; see docs/PRODUCTION_RUNBOOK.md.
