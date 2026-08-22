@@ -1,112 +1,87 @@
-<div align="center">
-  <img src="public/next.svg" alt="Logo" width="120" height="120" />
+# AIDL Platform — Multi-Tenant AI Data Analytics SaaS
 
-  # AIDL Platform 🚀
-  
-  **Enterprise-grade, Multi-Tenant AI Data Analysis SaaS**
-  
-  [Features](#features) • [Tech Stack](#tech-stack) • [Installation](#installation) • [Usage](#usage) • [Architecture](#architecture)
-</div>
+Upload your business data and receive a **trustworthy, professional dashboard
+and executive report** — without SQL, Python, Power BI, or a data analyst.
 
----
+> **Python computes. AI explains.**
+> Every number is produced by a deterministic analytics engine (Polars · SciPy ·
+> scikit-learn) with full provenance. The LLM only narrates over verified
+> results — and its output is schema-validated and clearly labeled.
 
-## 📖 Overview
+## Product capabilities
 
-**AIDL Platform** is an advanced, multi-tenant Software-as-a-Service (SaaS) built to revolutionize how businesses interact with their data. It empowers organizations to upload raw datasets (Excel, JSON) or documents (PDFs, Invoices), write custom prompts, and instantly receive structured AI-generated insights and reports.
+- **Organizations & RBAC** — owner / admin / analyst / member / viewer, one-time invitations
+- **Secure ingestion** — CSV · TSV · XLSX · JSON; magic-byte validation, plan-based size caps, zip-bomb guards
+- **Async pipeline** — atomic-claim job queue with retries/backoff and live progress UI
+- **Deterministic analysis** — profiling + quality scoring, domain inference (sales/ecommerce/finance/HR/CRM…), provenance-tagged KPIs, trends with seasonality, Pearson/Spearman correlations, IQR/robust-z/Isolation-Forest outliers, RFM & guarded k-means segmentation, holdout-validated forecasting (withheld when data doesn't justify it)
+- **Auto dashboard** — deterministic chart-selection rules rendered with ECharts; every widget explains why it was chosen
+- **Executive report** — 14 section types from verified numbers; print-to-PDF export; optional AI narrative clearly labeled
+- **Ask-AI Q&A** — grounded strictly in the dataset's verified results
+- **SaaS platform** — plans/subscriptions, concurrency-safe usage quotas, hashed API keys w/ expiry + rate limits, append-only audit log
+- **Public REST API** — async analyze + polling + full result contract, idempotency keys
 
-Built with security and scalability in mind, it features strict tenant data isolation, dynamic dark/light themes, and a robust NextAuth authentication system.
+## Quick start (local)
 
----
-
-## ✨ Features
-
-- 🔐 **Secure Multi-Tenancy:** Complete logical isolation of data between tenants using `tenantId` strict scoping in MongoDB.
-- 🧠 **AI-Powered Data Pipelines:** Upload `.xlsx` files, write custom prompts, and let AI extract insights seamlessly.
-- 🎨 **Modern & Dynamic UI:** Premium, glass-morphism aesthetic with full **Dark / Light Mode** support (Next-Themes).
-- 🔔 **Real-time Notifications:** In-app notification bell and pop-up toasts for processing status.
-- 🔑 **API Key Management:** Generate, mask, and revoke secure API keys scoped to tenant quotas.
-- 🧑‍💻 **Super Admin Dashboard:** Centralized control over AI Model configurations and system monitoring.
-- ⚡ **Optimized Performance:** Built on Next.js App Router with Server Components and Server Actions.
-
----
-
-## 🛠️ Tech Stack
-
-- **Framework:** [Next.js 15](https://nextjs.org/) (App Router, Server Actions)
-- **Language:** [TypeScript](https://www.typescriptlang.org/)
-- **Authentication:** [NextAuth.js (Auth.js)](https://next-auth.js.org/)
-- **Database:** [MongoDB](https://www.mongodb.com/) via [Mongoose](https://mongoosejs.com/)
-- **Styling:** Vanilla CSS Variables & TailwindCSS
-- **Components & Icons:** [Lucide React](https://lucide.dev/)
-- **Data Parsing:** [SheetJS (xlsx)](https://sheetjs.com/)
-
----
-
-## 🚀 Installation & Setup
-
-### Prerequisites
-- Node.js (v18+)
-- MongoDB connection string (Atlas or Local)
-
-### 1. Clone the repository
 ```bash
-git clone https://github.com/memoadeldev-prog/multi-tenant-ai-data-analyzer.git
-cd multi-tenant-ai-data-analyzer
+cp .env.example .env.local          # then set NEXTAUTH_SECRET & APP_ENCRYPTION_KEY:
+#   openssl rand -base64 32         # NEXTAUTH_SECRET
+#   openssl rand -hex 32            # APP_ENCRYPTION_KEY
+
+docker compose up --build           # full stack: web :3000, analytics :8000, mongo/redis/minio
+
+# or bare-metal dev:
+npm install && npm run dev          # web on :3000
+cd analytics-service && pip install -e ".[dev]" && uvicorn app.main:app --port 8000
+npm run build:worker && npm run worker   # background processor (separate terminal)
+
+# or manage all three development processes with PM2:
+# Python 3.12+ and analytics-service/.venv must be prepared once.
+npm run dev:all                     # web :3001 + worker + analytics :8000
+npm run dev:all:logs                # combined logs
+npm run dev:all:stop                # stop all AIDL processes
 ```
 
-### 2. Install dependencies
-```bash
-npm install
+Register at `/register` — you get a personal organization instantly.
+
+## Commands
+
+| Command | Purpose |
+|---|---|
+| `npm run dev` / `build` / `start` | Next.js app |
+| `npm run typecheck` | strict TS check |
+| `npm run lint` | ESLint |
+| `npm test` | Vitest suites (DB-gated isolation suite auto-runs when Mongo present) |
+| `npm run build:worker` / `worker` | build/run the queue worker |
+| `npm run dev:all` | build and run web + worker + analytics under PM2 |
+| `npm run dev:all:status` / `dev:all:logs` / `dev:all:stop` | manage the PM2 development stack |
+| `pytest` (in `analytics-service`) | Python engine tests |
+
+## Architecture
+
+```
+Next.js (control plane) ──► Mongo-backed job queue ──► Worker orchestrator
+                                                        │
+                                        Python analytics service (compute plane)
+                                                        │
+                              Verified contract → Dashboard + Report → optional AI narrative
 ```
 
-### 3. Environment Variables
-Create a `.env.local` file in the root directory and add the following:
-```env
-# MongoDB Connection
-MONGODB_URI=mongodb+srv://<username>:<password>@cluster0.mongodb.net/aidlplatform
+Full details in [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md).
 
-# NextAuth Secrets
-NEXTAUTH_URL=http://localhost:3000
-NEXTAUTH_SECRET=generate-a-strong-secret-key
-```
+## Documentation
 
-### 4. Start the Development Server
-```bash
-npm run dev
-```
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+[Architecture](docs/ARCHITECTURE.md) · [Security](docs/SECURITY.md) ·
+[Multi-tenancy](docs/MULTI_TENANCY.md) · [Authorization](docs/AUTHORIZATION.md) ·
+[Billing](docs/BILLING.md) · [API](docs/API.md) ·
+[Data pipeline](docs/DATA_PIPELINE.md) · [Python engine](docs/PYTHON_ANALYTICS_ENGINE.md) ·
+[Dashboard engine](docs/DASHBOARD_ENGINE.md) · [Report engine](docs/REPORT_ENGINE.md) ·
+[Testing](docs/TESTING.md) · [Docker](docs/DOCKER.md) · [Deployment](docs/DEPLOYMENT.md) ·
+[Backup/Restore](docs/BACKUP_RESTORE.md) · [Runbook](docs/PRODUCTION_RUNBOOK.md) ·
+[Audit](docs/PRODUCTION_AUDIT.md) · [Feature matrix](docs/FEATURE_MATRIX.md)
 
----
+## Honest status
 
-## 👥 Usage Guide
-
-### Super Admin
-- **Login:** `/login` (Default seed account: `admin@aidl.com` / `SuperSecretPassword!`)
-- **Action:** Add AI Models (e.g., OpenAI, Gemini) in the `/admin/models` page to allow tenants to use them.
-
-### Tenant User
-- **Register/Login:** `/register` or `/login`
-- **Dashboard:** Navigate to `/dashboard/upload` to upload an Excel file.
-- **Generate Report:** Select an AI Model, write your prompt (e.g., *"Summarize sales by region"*), and hit generate.
-- **Data Explorer:** View structured AI results and raw parsed text in `/dashboard/data-explorer`.
-
----
-
-## 🏗️ Architecture Highlight: Data Isolation
-
-To prevent cross-tenant data leakage, the platform utilizes a strict DAL (Data Access Layer). 
-Every Mongoose query across `ApiKey`, `ExtractedData`, and `Notification` models implicitly enforces the `tenantId` parameter:
-
-```typescript
-// Example from src/actions/data-explorer.ts
-const docs = await ExtractedData.find({
-  tenantId: session.userId, // 🔒 The barrier
-  status: ExtractionStatus.COMPLETED
-});
-```
-
----
-
-<div align="center">
-  <p>Built with ❤️ by AIDL Team.</p>
-</div>
+See [`docs/PRODUCTION_TRANSFORMATION_REPORT.md`](docs/PRODUCTION_TRANSFORMATION_REPORT.md)
+for the verified checklist. Notably: PDF/OCR extraction is **disabled** until a
+real engine exists (no fabricated content), Stripe checkout requires provider
+credentials, and Docker image builds require a Docker-enabled CI run.

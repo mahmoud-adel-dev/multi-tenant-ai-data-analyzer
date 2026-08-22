@@ -13,7 +13,8 @@
  */
 
 import { useState, useTransition } from "react";
-import { AiModelConfigDTO, ModelProviderType } from "@/types";
+import { AiModelConfigDTO } from "@/types/dto";
+import { ModelProviderType } from "@/types";
 import {
   createAiModelConfig,
   updateAiModelConfig,

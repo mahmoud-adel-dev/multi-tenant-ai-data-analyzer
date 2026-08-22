@@ -1,0 +1,673 @@
+========================================
+ANALYTICS ENGINE / APPLICATION STATUS
+========================================
+
+Date:              2026-08-22
+Project:           aidlplatform — multi-tenant AI data analyzer
+                   (Next.js 15 + TypeScript + MongoDB + PM2; Python/Polars
+                   deterministic analytics service)
+Engine Version:    analytics-service 1.0.0 (ENGINE_VERSION)
+Report Scope:      Deep audit + upgrade of the analytics engine, nested-JSON
+                   understanding, evidence-based quality, semantic/domain
+                   intelligence, plan-driven KPIs, trend/anomaly/forecast
+                   correctness, provenance, Ask-AI grounding, EN/AR i18n+RTL.
+
+
+1. EXECUTIVE SUMMARY
+--------------------
+The platform has moved from "a generic statistics generator" to a layered,
+domain-aware analytics engine with an explicit pipeline:
+
+    ingestion -> flatten(nested JSON) -> schema inference -> semantic labeling
+    -> domain detection -> leaf-level quality -> ANALYSIS PLAN -> plan-driven
+    KPIs -> trends -> correlations(?) -> planned anomaly methods ->
+    planned segmentation -> baseline-gated forecasts -> dashboard/report plans
+    -> Zod contract gate in worker -> persistence.
+
+Every headline claim below is backed by an executed test on this machine:
+
+  * Nested sales dataset, 100,000 records / 58.0 MB: upload 5.1 s,
+    full analysis COMPLETED in 17.3 s (engine stage timings recorded).
+  * Automated MVP acceptance suite (scripts/verify-mvp.mjs): 33/33 checks PASS,
+    covering every criterion of task section 41 that is implementable without
+    a configured LLM.
+  * Python tests: 62 passed. TypeScript tests: 54 passed. eslint: 0 errors.
+    tsc --noEmit clean. next build succeeds. Worker bundle rebuilt and running
+    under PM2 (web :3001, worker, uvicorn :8000).
+
+Honest bottom line: analytical correctness, nested-JSON understanding,
+evidence-based quality, semantic labels, domain-gated KPIs, consistent trend
+language, statistical-vs-business anomalies, and self-validating forecasts are
+REAL and verified. The weakest areas are: dynamic analytical text is still
+English-only (UI chrome is bilingual AR/EN with real RTL), Ask-AI requires an
+admin-configured LLM and was not exercised live, dashboards have no
+drill-down filters, and scale beyond single-node memory is unarchitected.
+
+Overall MVP readiness: 73/100 (section 26).
+
+
+2. CURRENT ARCHITECTURE
+-----------------------
+Control plane (Next.js App Router, standalone build under PM2 as `aidl-web`):
+  - Auth (next-auth) + org scoping; upload via Server Action or public REST
+    (/api/v1/analyze with API-key bearer auth, idempotency keys).
+  - MongoDB-backed job queue (`analysisjobs`) with atomic claim, heartbeats,
+    stalled-job reclaim, capped retries; CONTRACT_VALIDATION_FAILED /
+    MALFORMED_FILE are non-retryable by design.
+
+Worker (`aidl-worker`, esbuild-bundled scripts/worker.ts):
+  - Loads stored file -> POSTs to compute plane -> validates EVERY payload
+    against AnalysisRunPayloadSchema (Zod) -> persists AnalysisRun +
+    Dashboard + Report docs -> optional LLM narrative over VERIFIED data only
+    -> notification. Structured JSON logs: ANALYSIS_STARTED,
+    PARSING_COMPLETED, ANALYZING_COMPLETED, CONTRACT_VALIDATED /
+    CONTRACT_VALIDATION_FAILED (issue count + first 5 paths),
+    ANALYSIS_COMPLETED / ANALYSIS_FAILED with durationMs, rowCount,
+    columnCount, RSS. Continuous 30 s heartbeat during long engine calls;
+    max_memory_restart 1G safety net.
+
+Compute plane (`aidl-analytics`, FastAPI + Polars/NumPy/SciPy/scikit-learn/
+statsmodels, uvicorn :8000):
+  - app/core/loader.py      CSV/TSV/XLSX/JSON loading w/ hard ceilings
+  - app/profiling/flatten.py       recursive Struct -> dotted-path leaves
+  - app/profiling/profiler.py      types, stats, quality findings, domain
+  - app/profiling/semantics.py     path-token + value-pattern semantics
+  - app/core/planner.py            AnalysisPlan BEFORE any metric runs
+  - app/statistics/kpi.py          plan-driven KPIs + provenance
+  - app/statistics/time_series.py  classification + partial-bucket guard
+  - app/ml/outliers.py             method selection + business context
+  - app/ml/segmentation.py         RFM / silhouette-guarded k-means
+  - app/forecasting/engine.py      holdout vs naive baseline gating
+  - app/visualization/planner.py   deterministic chart selection + insights
+  - app/reporting/builder.py       dataset-aware executive report
+  - app/schemas/contract.py        Pydantic contract (mirrors TS)
+
+Contracts are mirrored in three places and kept in sync:
+  analytics-service/app/schemas/contract.py
+  src/lib/ai/analytics-schema.ts (Zod; boundary normalization for additive
+                                  fields, strict element shapes elsewhere)
+  src/types/analytics.ts
+
+
+3. ANALYTICS ENGINE STATUS
+--------------------------
+State: SUBSTANTIALLY UPGRADED, VERIFIED END-TO-END.
+  * Pipeline is staged with per-stage timings persisted in payload
+    executionStats.stageTimingsMs (load, flatten, profile, plan, kpis,
+    trends, correlations, anomalies, segmentation, forecasts, render_plans).
+    Measured on the 100k nested run: load 2.9 s (JSON parse dominates),
+    flatten 4 ms, profile 505 ms, kpis 307 ms, trends 139 ms,
+    correlations 1.97 s, anomalies 2.45 s, forecasts 149 ms.
+  * One failed metric no longer kills the run: per-KPI try/catch emits a
+    "<key>_error" metric carrying the failure text instead of crashing.
+  * Engine remains fully deterministic (no LLM anywhere in computation).
+
+Gaps: granularity chooser picks week buckets for spans up to ~3 years
+(monthly only beyond); no seasonal decomposition (STL) yet; KPI-level
+confidence intervals not computed.
+
+
+4. DATA INGESTION STATUS
+------------------------
+State: SOLID for CSV/TSV/XLSX/JSON within documented limits.
+  * Fixed earlier: Polars 1.x removed read_csv(lazy=True) — loader now uses
+    scan_csv + head() collect (CSV path was completely broken before fix).
+  * Ceilings: max_upload_bytes 250 MB default, max_rows 5M, max_columns 500,
+    Excel zip-bomb guards (50 sheets / 5M cells), ragged-line rejection.
+  * Preflight /v1/validate runs before quota reservation.
+  * Malformed JSON / empty datasets rejected cleanly (HTTP 400 MALFORMED_FILE,
+    verified). One-row CSV, all-null columns, mixed types, bad dates,
+    deep nesting all complete gracefully (verified edge-case matrix).
+
+Gaps: streaming/chunked ingestion absent — whole buffer held in memory
+(worker + engine); Excel limited to first sheet; .xls legacy unsupported.
+
+
+5. NESTED JSON SUPPORT
+----------------------
+State: IMPLEMENTED AND VERIFIED (was the top-reported weakness).
+  * flatten_frame() recursively explodes Struct columns into dotted-path leaf
+    columns ("customer.region", "pricing.total", "metrics.profit_margin",
+    2-level nesting like customer.address.city works), depth cap 6, collision-
+    safe renaming, empty structs dropped and reported.
+  * Lists preserved as list-typed columns profiled structurally (emptiness,
+    avg length, distinct/top values from bounded explosion) — row grain is
+    never changed.
+  * Verified: parent structs gone, 25→26 leaf fields individually profiled,
+    nestedFieldCount=6 groups, nullCount propagates through nesting
+    (customer.segment 2.03%, metrics.profit_margin 5.33% detected).
+
+
+6. SCHEMA INFERENCE
+-------------------
+State: STRONG for tabular + flattened leaves.
+Per field: fieldPath (dotted), normalizedName, parentPath, dataType
+(inferredType incl. new "array"), role, nullable/nullCount/nullRate (nulls +
+blanks for strings), uniqueCount/cardinality, min/max/mean/median/stdDev/
+p05/p25/p75/p95, histogram (numeric), dateRange (temporal), topValues
+(categorical/boolean/list), sampleValues, semanticType + confidence + 18
+boolean flags (isIdentifier/isMeasure/isDimension/isCurrency/isPercentage/
+isLocation/isPersonName/isEmail/isStatus/isDate/isTime/isNumeric/
+isCategorical/isBoolean/isCategory/isProduct/isCustomerField/isOrderField).
+Type-specific stats enforced: strings don't get fake means; identifiers are
+excluded from correlations-as-measures and from histograms.
+
+Gaps: mixed-type detection is heuristic (string columns 15–85% numeric);
+no cross-field type consistency versioning (schema drift across uploads of
+the same dataset is not tracked yet).
+
+
+7. SEMANTIC UNDERSTANDING
+-------------------------
+State: NEW DETERMINISTIC LAYER, VERIFIED.
+Evidence sources combined per field: (a) dotted-path tokens, (b) value shapes
+(status vocabularies completed/pending/cancelled/shipped/…, e-mail regex,
+strict person-name regex requiring 2+ title-cased words so "CUST-00042"/
+"Product 5" cannot masquerade as names, percentage-range evidence), (c) stats
+(cardinality, numeric range). Specificity ranking resolves conflicts
+correctly: pricing.tax_amount -> tax (not revenue via generic "amount"),
+pricing.discount_rate -> discount + isPercentage flag, order_id -> order_ref
+(not bare identifier), shipping.delivery_days -> shipping_cost family with
+duration semantics, sale_rep -> person_name (confidence attached, e.g.
+revenue 0.95, status 0.92).
+
+Verified on 100k run: pricing.total→revenue, customer.region→location,
+payment.status→status, order_date→temporal, sale_rep→person_name,
+order_id→order_ref; confidence ≥0.8 asserted.
+
+Gaps: vocabulary-bound (English tokens); unknown still emitted for some
+fields (shipping.carrier); no embedding/ML similarity; no per-tenant custom
+synonym config surface yet.
+
+
+8. DOMAIN DETECTION
+-------------------
+State: EVIDENCE-SCORED WITH HONEST GATING.
+Signals: revenue×order refs → sales(+3.0); customer fields × transactions →
+ecommerce; product×revenue; payment_method; campaign/impressions/clicks →
+marketing; salary/department/hire_date → hr; stock/warehouse/reorder_level →
+inventory; invoice/ledger/journal → finance; geographic dims alongside money
+boost sales. Confidence = f(score); below 0.45 degrades to generic_tabular
+and a GENERIC analysis catalog is used instead of forcing business KPIs.
+Verified: nested sales → sales @0.79; flat generic {"a","b"} → generic plan
+with row_count/total_a/unique_b style KPIs.
+
+Gaps: marketing/hr/inventory catalogs exist but are thin and were validated
+only at unit level, not end-to-end with real fixtures; no multi-domain
+(weighted mixture) output.
+
+
+9. DATA QUALITY ENGINE
+----------------------
+State: LEAF-LEVEL AND EVIDENCE-BASED (was reporting 100/100 with hidden
+nested gaps — fixed fundamentally).
+Checks now operate on flattened leaves and include: missing values (nulls;
+blanks counted as missing for score, threshold >2% tiers low/medium/high),
+empty-string findings, invalid_dates (date-role strings failing parse),
+out_of_range_percentage (auto fraction-vs-percent scale from mean; verified
+flagging discount_rate=25), negative_values where semantics forbid them
+(revenue/price/quantity/tax/discount_amount/shipping_cost/duration),
+duplicate_identifiers (uniqueness expected), duplicate_rows, constant_column,
+high_cardinality_measure, mixed_type_field. Quality score penalizes
+missingness/duplication/severity counts — NEVER forced to 100.
+Verified on 100k: missingCellPercentage=0.42% (real nested gaps), quality
+93.7/100, findings reference nested leaf paths.
+
+Gaps: no referential-integrity/cross-field rules (e.g., total != subtotal -
+discount + tax detection), no duplicate-fuzzy matching, schema drift across
+re-uploads not yet surfaced as findings.
+
+
+10. KPI ENGINE
+--------------
+State: PLAN-DRIVEN, SALES-MODE VERIFIED AT SCALE.
+compute_kpis_from_plan(df, plan, version) computes ONLY planned+available
+KPIs; aggregations SUM/MEAN/MEDIAN/MIN/MAX/COUNT/COUNT_DISTINCT (raw-value
+distinct — regression-fixed so string IDs aren't numerically cast)/RATIO.
+Sales catalog: Total Revenue=SUM(pricing.total|revenue|net_sales|gmv|…),
+Total Orders=COUNT_DISTINCT(order_id|sale_id|invoice_no), Units Sold=SUM(quantity),
+Unique Customers=COUNT_DISTINCT(customer.customer_id|email|…), AOV=RATIO(rev/orders),
+Avg Units/Order, Avg Discount Rate %, Tax Collected, Shipping Cost, Avg Delivery
+Days, Avg Gross Margin, Cancellation Rate & Return Rate (share of payment.status
+in cancelled|canceled / returned|refunded), Unique Segments, plus row_count.
+Unavailable KPIs appear in the plan with missingPaths and are EXCLUDED from
+metrics (verified: gross_margin computed when margin exists; units correctly
+reported unavailable when quantity column absent in an earlier fixture).
+PROVENANCE on every metric: sourceColumns (dotted paths), aggregation,
+rowsUsed, nullsExcluded (verified: revenue used=98795 excluded=1205),
+optional timeRange/groupBy/filters/algorithm text.
+
+Gaps: ratio denominators assume distinct-count semantics except special-cased
+keys; no period-over-period KPI deltas yet; currency code unknown (numbers
+locale-formatted, symbol not inferred).
+
+
+11. TREND ANALYSIS
+------------------
+State: MATHEMATICALLY CONSISTENT (the "stable (-56.4%)" class of contradiction
+is impossible by construction).
+Documented thresholds: |Δ|<5% stable; 5–25% moderate_growth/decline; >25%
+strong_growth/decline; relative std >0.8 overrides endpoints → high_volatility;
+<5 periods or zero variance → insufficient_data. directionLabel ALWAYS embeds
+the measured change (e.g. "Strong Growth (+42.3%)"), so text can never disagree
+with numbers; volatilityCoefficient persisted; seasonality via lag
+autocorrelation with note; MA7/MA30 trailing windows materialized as arrays.
+Insight text grounded in first/last/peak/trough values with explicit
+non-causality hedging.
+
+PARTIAL-BUCKET FIX (forecast visual drop): the trailing bucket whose date
+coverage ends early (dataset ends mid-week/month) is EXCLUDED from the series
+with lastPeriodComplete=false + engine warning — the artificial trough right
+before a forecast is gone (verified: predictions start strictly after the last
+complete history period).
+
+Gaps: endpoint-based change% still noisy for long series (volatility flag
+mitigates, doesn't replace); no STL decomposition; no YoY alignment.
+
+
+12. ANOMALY DETECTION
+---------------------
+State: METHOD SELECTION + BUSINESS CONTEXT, VERIFIED.
+Plan chooses methods by data shape: n≥500 & ≥3 clean measures → IQR +
+robust z-score + Isolation Forest (2% contamination); n≥30 → univariate only;
+else IQR alone. Every anomaly carries classification:
+  * statistical_outlier — distributional flag, explanation explicitly states
+    it does NOT indicate an error;
+  * business_notable — statistically unusual but operationally plausible
+    (positive extreme quantity = possible bulk order; positive revenue
+    extremes = possible high-value orders; negatives in monetary fields are
+    flagged as likely refunds/errors instead).
+Dashboard widget shows split counts; severity from tail share.
+Degenerate-spread case handled (constant column + one extreme is flagged).
+Verified: classification enum populated on 100k run; method list respected.
+
+Gaps: LOF implemented? No (documented option, not added — avoided extra dep);
+time-series-specific anomaly methods (STL residuals) absent; per-column
+business thresholds not user-configurable yet.
+
+
+13. FORECASTING
+---------------
+State: BASELINE-ACCOUNTABLE AND SELF-WITHHOLDING.
+Requirements: ≥12 complete periods, variance>0, chronological holdout (~20%)
+where Holt damped-trend must beat BOTH MAPE≤60% AND a naive/seasonal-naive
+baseline — otherwise the forecast is WITHHELD and the reason becomes an engine
+warning (surfaced as "Completed with warnings"). fitMetrics={mape, mae,
+baselineMape, skillScore}; validationMethod="chronological holdout vs naive
+baseline". Uncertainty bands widen ∝√step using one-step-difference sigma
+(convolution edge-artifact removed). Predictions continue from the last
+COMPLETE period label in the identical format (continuity verified).
+Verified on 100k: forecasts present with skillScore>0 (e.g. subtotal
+MAPE 27.1 vs naive 44.3, skill 0.387).
+
+Gaps: single model family (Holt); SARIMA/Holt-Winters seasonal fitting,
+Prophet-style holiday effects, and per-method selection by seasonality
+strength are future work; bands are Gaussian approximations.
+
+
+14. INSIGHT GENERATION
+----------------------
+State: GROUNDED, HEDGED, DETERMINISTIC.
+Trends emit insight sentences citing actual first/last/peak/trough values and
+period ranges, with "available data does not establish causality" phrasing.
+Category bars cite leader share ("'East' leads with 23.4% of total …").
+KPI cards disclose partial data ("Computed from 392 rows; 8 rows excluded").
+Anomaly widget separates statistical vs business-plausible counts. Report
+recommendations derive ONLY from measured findings (declining trend names its
+metric; discount-vs-AOV pairing; strong-correlation pairs with non-causality
+note; high-severity quality gates; dominant segment share) and are labeled
+"options to investigate, not guarantees".
+
+Gaps: insight sentences are template-generated English; localization requires
+the structured insight-code refactor noted in section 17. No automatic
+cross-metric correlation narratives beyond drivers list.
+
+
+15. ASK AI
+----------
+State: ARCHITECTURE STRENGTHENED (verified context; live call UNTESTED here
+because no AiModelConfig is active in this environment).
+Improvements shipped: verified context now includes DATASET DOMAIN, the full
+AVAILABLE SEMANTIC FIELDS map (path → semanticType), per-metric row counts,
+and an explicit "METRICS THAT CANNOT BE COMPUTED" block sourced from the
+analysis plan — the model is instructed to answer margin questions with
+"required fields absent" when cost/margin is listed there. Language rule:
+reply in the SAME LANGUAGE as the question (Arabic questions → Arabic
+answers). Prompt-injection guards and rate limits unchanged.
+
+Gaps: assistant still cannot run NEW aggregations beyond precomputed metrics
+(e.g., "revenue by city" answers only if that breakdown was planned);
+requires admin-configured model; no deterministic template fallback when no
+LLM is configured.
+
+
+16. REPORT GENERATION
+---------------------
+State: DATASET-AWARE AND PROVENANCE-COMPLETE.
+Sections adapt: Executive Summary cites domain confidence + planned-KPI
+counts (+ notes when generic plan applied); Dataset Overview lists leaf
+fields, nested-group flattening, semantic-type table with confidences, plan
+notes, and an explicit "KPIs intentionally NOT calculated (missing fields)"
+paragraph; Data Quality table from leaf findings; Key KPIs w/ per-metric
+provenance lines; Major Trends quoting directionLabel + measured % + insight;
+Top/Bottom performers; Anomalies split by classification with explanatory
+column; Forecasts quoting holdout-vs-baseline numbers, or an honest
+withheld-forecast warning block; Segmentation; Recommendations
+(evidence-linked); Risks & Limitations; Methodology (updated to describe
+flattening/planning/baseline gating); Appendix: full provenance table
+(metricId, source paths, aggregation, rowsUsed, excluded).
+Verified keys on 100k run: 15 sections incl. recommendations.
+
+Gaps: section body text English-only (see 17); PDF export remains browser
+print styling; charts inside reports reuse dashboard widgets.
+
+
+17. ARABIC / RTL SUPPORT
+------------------------
+State: REAL INFRASTRUCTURE SHIPPED; DYNAMIC CONTENT STILL ENGLISH.
+Shipped:
+  * Centralized typed dictionaries (src/i18n/dictionaries.ts): EN source of
+    truth + full AR mirror (~150 keys incl. functions for pluralization).
+  * LocaleProvider (client): cookie + localStorage persistence, flips
+    <html dir="rtl"|ltr"> and lang; LocaleSwitcher (English | العربية) in the
+    sidebar; server pages read locale via cookie (getServerLocale).
+  * Intl formatting: numbers/dates/bytes locale-aware; Arabic uses Latin
+    digits (ar-EG-u-nu-latn) for dashboard readability.
+  * Localized surfaces: sidebar nav, dashboard home, ENTIRE upload workspace
+    (dropzone, validation, preview chips, pipeline ladder + hints, error
+    humanization via error-class keys, deliverables, plan limits), datasets
+    list (toolbar/filters/sort/table headers/pagination/empty states/toasts),
+    dataset workspace chrome (tabs, processing ladder, failed/warnings
+    banners, empty states, severity labels Critical/Warning/Info), Columns
+    tab labels, Ask-AI panel.
+  * Real RTL: [dir=rtl] CSS (sidebar border flip, table/panel start-alignment);
+    flex/grid layouts mirror automatically; Ask-AI answers language-match.
+NOT YET (honest):
+  * Engine-generated dynamic content — widget subtitles, report paragraphs,
+    quality descriptions, forecast explanations — remains English. The clean
+    path is: Python emits {code, params} insight objects; TS renders localized
+    templates. Not done in this iteration.
+  * Charts (ECharts canvas) stay LTR; first paint may flash LTR before the
+    client applies a stored Arabic cookie; no /en//ar route segments.
+
+
+18. PERFORMANCE
+---------------
+Measured (Windows dev box, MongoDB Atlas):
+  * Upload 56–58 MB nested JSON → API accept ~5 s (multipart parse + storage
+    + quota + enqueue).
+  * Full analysis pipeline after claim: ~12–14 s engine-side; job COMPLETED
+    end-to-end 15.7–17.3 s across three consecutive runs.
+  * Stage hotspots (persisted): JSON load 2.9 s, correlations 2.0 s,
+    anomalies 2.5 s, profiling 0.5 s, planning 0 ms (trivial), flatten 4 ms.
+  * Frontend bundles: dashboard pages 106–123 kB first-load JS.
+Worker memory observed 240–700 MB RSS on 100k payloads; PM2
+max_memory_restart=1G configured as a backstop.
+
+Gaps: upload path buffers entire file in memory twice (XHR → FormData →
+Buffer); no progress streaming from engine during the single /analyze call
+(UI shows elapsed time honestly instead of fake %).
+
+
+19. SCALABILITY
+---------------
+Designed-for vs built-for:
+  * Vectorized Polars throughout; O(n·cols) profiling; correlations capped
+    (60 pairs); anomalies capped (300); series capped (400 pts); findings
+    capped (150/200). No O(n²) on the critical path for the supported shape.
+  * Single-node, single-process engine: datasets that exceed RAM (or the 250 MB
+    upload ceiling) are out of scope TODAY. No chunked/streaming ingestion, no
+    DuckDB/Parquet intermediate store, no partitioned execution, no horizontal
+    worker pool (one worker process by design; queue supports more).
+  * MongoDB: AnalysisRun stores FULL payload (incl. dashboard/report plans) in
+    one document — fine at current sizes (~few MB) but approaching the 16 MB
+    doc limit is plausible for very wide schemas; splitting plans into their
+    collections is recommended before 500k+ rows become common.
+Verdict: reliable to low hundreds of thousands of rows on commodity hardware;
+beyond that needs the streaming/store work itemized in section 28.
+
+
+20. DATABASE / API STATUS
+-------------------------
+Indexes managed via scripts/migrate-indexes.mjs (run at worker/web boot and
+manually verified): jobs org+status/runAt claims, idempotencyKey unique,
+apikeys keyPrefix, org-scoped dataset indexes (existing set unchanged).
+API surface re-validated this session:
+  POST /api/v1/analyze (bearer key, multipart or base64, idempotency replay)
+  GET  /api/v1/jobs/{id} (stage/progress/resultRefs)
+  GET  /api/v1/datasets/{id}/analysis (full contract)
+Contract drift between producer/consumer is structurally prevented: worker
+Zod-gates every payload; additive fields carry defaults at the boundary while
+element shapes remain strictly validated (tests assert legacy null-lists
+normalize to [] and malformed elements still reject).
+No destructive migrations required by this upgrade (new payload fields are
+additive; Mongo is schemaless).
+
+
+21. UI / UX STATUS
+------------------
+Current state (after both redesign rounds):
+  * Dense, responsive shells: upload workspace (two-column grid, drag&drop,
+    client-side structural checks + preview chips, live pipeline ladder with
+    elapsed time), datasets list (search/filter/sort/pagination/skeletons),
+    dataset workspace (Overview stats + severity-filtered quality findings,
+    NEW Columns tab with per-leaf stat grids, CSS histograms, top-value bars,
+    search/role-filter/sort), dashboard renderer (KPI row w/ partial-data
+    disclosures, trend area charts, category bars w/ share insights, anomaly
+    table with classification column, forecast chart with history/interval
+    separation), report view, Ask-AI panel.
+  * Honest processing UX: real job stages + percentages, elapsed timer,
+    warnings banner ("Completed with N warnings"), failed banner with retry.
+  * Empty/loading/error states everywhere; print stylesheet for reports.
+Gaps: dashboard lacks interactive filters (date/region/category drilldown);
+chart tooltips are ECharts defaults; no virtualization needed yet at current
+row caps since UI consumes aggregated specs only (raw rows never sent to the
+browser — verified: widget payloads are aggregates).
+
+
+22. TESTING RESULTS
+-------------------
+Python (pytest, analytics-service): 62 passed.
+  New suites: test_flatten.py (paths/null-propagation/lists/empty-structs),
+  test_semantics_planning.py (semantic mapping incl. person-name strictness,
+  specificity tax-vs-revenue, planner gating incl. unavailable-with-paths,
+  anomaly-method scaling, leaf-quality incl. nested missingness + range +
+  negative-value flags), expanded test_statistics.py (COUNT_DISTINCT-on-IDs
+  regression, AOV ratio, direction-label-consistency property, volatility
+  override, insufficient-data, business-notable classification, method allow-
+  list, forecast baseline/continuity/eligibility).
+TypeScript (vitest): 54 passed. Includes contract normalization regressions
+  (legacy null lists → [], moving-average nullish, provenance defaults,
+  prompt-injection containment suites untouched and green).
+Static: tsc --noEmit clean; eslint 0 errors (6 stylistic warnings);
+  next production build succeeds; worker bundle builds (esbuild).
+E2E (live PM2 stack): nested sales 100k×26 / 58 MB → COMPLETED 17.3 s;
+  verify-mvp.mjs acceptance suite 33/33 PASS (sections 41 criteria mapped).
+Edge matrix (live): empty JSON & malformed JSON rejected 400; one-row CSV,
+  all-null column, mixed types, high-cardinality, negative/zero values, bad
+  dates, deep nesting → all COMPLETED without crash.
+
+
+23. KNOWN LIMITATIONS
+---------------------
+1. Dynamic analytical text (widget subtitles, report bodies, finding
+   descriptions, insight sentences) is English-only; see §17.
+2. Ask-AI requires an admin-configured LLM; no deterministic fallback
+   answering, and the improved flow was not exercised against a live model
+   in this environment.
+3. Dashboard interactivity: no cross-filtering/drill-downs/date-range
+   selectors yet; widgets are static specs.
+4. Array/list fields analyzed structurally only (no element-level measures
+   or exploded dimensions).
+5. Forecasting limited to Holt damped-trend + baselines; no seasonal models
+   (SARIMA/HW/Prophet), no holiday calendars, Gaussian-only bands.
+6. Trend granularity: weekly buckets dominate spans ≤3y; monthly/yearly only
+   beyond; no user-selectable granularity.
+7. No geographic visualization (map) even when location semantics exist.
+8. Ingestion is in-memory end-to-end; 250 MB / 5M-row ceilings are hard walls
+   rather than streaming boundaries.
+9. Schema-drift tracking across re-uploads of the same logical dataset is
+   not implemented (each upload profiles independently).
+10. First-paint locale flash possible (server renders LTR default; client
+    applies stored AR cookie post-hydration).
+
+
+24. REMAINING TECHNICAL DEBT
+----------------------------
+* normalize.py legacy SEMANTIC_PATTERNS coexists with the newer
+  semantics.py layer (used by time-series date-candidate discovery);
+  consolidation pending.
+* Some large modules remain (profiler ~500 lines mixing inference+quality;
+  DatasetWorkspace ~400 lines orchestrating five tabs) — candidates for
+  further extraction.
+* Report/dashboard builders accept positional argument lists (11 params);
+  a context object would reduce coupling.
+* Frontend has zero component tests; i18n dictionary completeness is
+  convention-enforced (typed mirror) but not CI-checked for missing keys.
+* e2e-edge-cases.mjs / verify-mvp.mjs are scripts, not wired into CI.
+* Mixed-language risk surface: any newly added Python user-facing string
+  will silently be English-only until the insight-code refactor lands.
+
+
+25. SECURITY CONCERNS
+---------------------
+Unchanged posture, re-audited:
+* Bearer API keys (bcrypt-hashed, prefix lookup, timing-safe compare,
+  constant-time dummy compare for unknown prefixes); org scoping on every
+  query; next-auth session for web actions; role gates (analyst+ to upload).
+* Prompt-injection containment: guardUntrustedContent around dataset-derived
+  text in AI prompts; narrative/QA schemas strip unknown fields (tested).
+* Upload hardening: magic-byte checks, sanitized filenames, size ceilings,
+  service-wide byte cap in Python, zip-bomb guards, bearer token between
+  worker and compute plane (hmac.compare_digest).
+* Rate limiting (per-org ask, per-key analyze) and audit log writes intact.
+New surface from this upgrade introduces no new inputs (planner/semantics
+read only derived frame data). Logging continues to avoid dataset contents.
+Residual risks: none newly introduced; standing items — CSP allows
+'unsafe-eval' in dev only; secrets remain in .env.local (unchanged practice).
+
+
+26. MVP READINESS SCORE
+-----------------------
+Scale 0–100 each. Rationale kept terse but specific.
+
+  Analytics correctness .... 78  consistent classifications, baseline-gated
+                                 forecasts, provenance everywhere; single
+                                 forecast family, no KPI confidence intervals
+  Data quality ............. 80  leaf-level, evidence-based, broad checks;
+                                 no cross-field/referential rules or drift
+  Semantic understanding ... 72  path+value+confidence works; vocab-bound,
+                                 English-name bias, some unknowns remain
+  Domain intelligence ...... 68  honest gating + solid sales/ecommerce mode;
+                                 other domains thin/untested end-to-end
+  Scalability .............. 76  vectorized + caps verified at 100k; no
+                                 streaming/partitioning story beyond RAM
+  Performance .............. 80  100k×26 nested in ~17 s with stage timings;
+                                 load phase dominates; no incremental mode
+  Reliability .............. 84  contract gate, retry policy, error-isolated
+                                 KPIs, heartbeats, memory backstop
+  UI/UX .................... 72  dense redesigned surfaces + honest progress;
+                                 no filters/drilldowns, dynamic text EN-only
+  Arabic support ........... 62  real i18n infra + RTL + locale formatting +
+                                 AR chrome; analytical content still EN,
+                                 charts LTR, first-paint flash
+  AI/Ask experience ........ 58  strong verified-grounding architecture +
+                                 language matching; needs configured LLM,
+                                 untested live, no deterministic fallback
+  Reporting ................ 75  dataset-aware sections + provenance appendix
+                                 + hedged recommendations; EN body, print PDF
+  Security ................. 78  prior hardening intact; no new surface
+  Maintainability .......... 76  layered modules + mirrored contracts + tests;
+                                 legacy duplication and big files remain
+  Test coverage ............ 74  116 automated tests incl. new layers; no
+                                 frontend/i18n tests, scripts not in CI
+  --------------------------------------------
+  OVERALL MVP READINESS ..... 73/100
+
+Why not higher: bilingual analytical content (single biggest demo blocker for
+an EN/AR product), dashboard interactivity, and a live-configured Ask-AI path
+are user-visible MVP expectations not yet met. Why not lower: the engine now
+understands what the data IS before computing, refuses fabrication, proves
+every number's lineage, and survives adversarial inputs — verified, not
+claimed.
+
+
+27. WHAT IS MISSING FOR MVP
+---------------------------
+P0 (blockers for the stated product vision):
+ 1. Insight/localization codes: Python emits {code,params}; TS renders AR/EN
+    templates for ALL dynamic text (widgets, report blocks, quality text).
+ 2. Configure + exercise one real LLM; verify Ask-AI AR/EN grounding flows
+    and add a deterministic template fallback when no model is active.
+ 3. Dashboard filters: at minimum date-range + one dimension selector
+    (region/category/channel) driving client-side spec refilters where data
+    permits, else re-analysis options.
+P1:
+ 4. Split Dashboard/Report plans out of the AnalysisRun document (doc-size
+    headroom); add schema-drift comparison on re-upload.
+ 5. Seasonal forecasting option (HW/SARIMA behind existing gate) + monthly
+    granularity choice for 1–3 year spans.
+ 6. Streaming/chunked ingestion path (Polars scan + batched JSON) or Parquet
+    staging to raise ceilings beyond RAM.
+ 7. Browser-level E2E tests (upload→dashboard in both languages) wired into CI.
+P2:
+ 8. Geo visualization for location semantics; array-element analytics;
+    per-tenant synonym dictionaries; KPI confidence intervals; notification
+    and email template localization.
+
+
+28. RECOMMENDED NEXT STEPS
+--------------------------
+Immediate (days):
+ 1. Land the insight-code contract (extend VisualizationSpec.insightText into
+    {code, params} + keep plain-text fallback) and port the ~25 existing
+    sentence templates to dictionaries.
+ 2. Set an AiModelConfig in staging; run the Ask-AI script matrix (EN + AR
+    questions incl. unavailable-metric probes); wire verify scripts into CI.
+ 3. Add date-range + dimension filter bar to DashboardRenderer consuming
+    already-present widget data series (client-side, no engine change).
+Near-term (weeks):
+ 4. Plan/document split + drift findings (§27 P1.4).
+ 5. Holt-Winters seasonal candidate behind the existing holdout gate;
+    expose granularity override in AnalyzeOptions.
+ 6. Chunked JSON reader (ijson/Polars stream) + Parquet cache in object
+    storage keyed by checksum; engine reads Parquet when present.
+Ongoing:
+ 7. Grow domain catalogs with fixture-driven E2E tests (marketing/inventory/
+    hr) mirroring the sales verification harness (verify-mvp pattern).
+ 8. Frontend component tests for the localized primitives (Tx/formatting/RTL
+    flip) and dictionary key-parity check in CI.
+
+
+29. FINAL ENGINEERING ASSESSMENT
+--------------------------------
+This upgrade changed the system's character. Previously the engine ran one
+generic pipeline over whatever arrived, scored quality from top-level cells
+(claiming 100/100 on data with hidden nested gaps), forced the same metrics
+onto every dataset, could describe a 56% collapse as "stable", drew forecasts
+after artificial troughs, and answered "why" questions with statistics alone.
+
+Now the engine discovers leaf structure in nested JSON (verified at 100k),
+labels every field semantically with calibrated confidence, scores quality
+from evidence (93.7/100 on intentionally dirty data, naming the exact leaves
+at fault), plans before computing — refusing gross-margin KPIs when cost is
+absent and saying so — computes sales KPIs from their true commercial sources
+with row-level provenance (98,795 of 100,000 rows, 1,205 excluded, printed on
+the card), describes trends in language arithmetically bound to the measured
+change, separates statistical outliers from business-plausible ones, and
+either validates forecasts against a naive baseline or declines to make them.
+All of this crosses a strict runtime contract gate before anything persists,
+and 116 automated tests plus a 33-point live acceptance suite hold the line.
+
+What remains is primarily presentation breadth (bilingual dynamic content,
+dashboard interactivity), one unexercised integration (live LLM for Ask-AI),
+and scale architecture beyond single-node memory. Those are scoped,
+sequenced, and do not undermine the core claim:
+
+The platform now behaves like a domain-aware analytics engine that understands
+what the data represents before deciding how to analyze it, communicates
+uncertainty honestly, and produces decision-ready output in two languages'
+interface — at 73/100 MVP readiness, with the remaining 27 points clearly
+itemized above.
+
+— End of report —

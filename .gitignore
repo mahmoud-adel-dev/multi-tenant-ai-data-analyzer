@@ -5,12 +5,15 @@ node_modules/
 
 # Build output
 .next/
+.build/
 out/
 dist/
 build/
 
 # Environment variables (NEVER commit these)
 .env
+.env.*
+!.env.example
 .env.local
 .env.development.local
 .env.test.local
@@ -32,3 +35,18 @@ Thumbs.db
 # Editor
 .vscode/
 .idea/
+
+# Object storage (local driver)
+storage-data/
+
+# Worker bundle
+dist-worker/
+.tmp-*
+
+# Python environments and generated metadata
+.venv/
+venv/
+__pycache__/
+*.py[cod]
+*.egg-info/
+.pytest_cache/

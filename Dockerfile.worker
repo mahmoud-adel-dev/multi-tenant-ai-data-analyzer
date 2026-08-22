@@ -1,0 +1,29 @@
+# ─── Stage 1: dependencies ──────────────────────────────────────────────────
+FROM node:22-alpine AS deps
+WORKDIR /app
+COPY package.json package-lock.json ./
+RUN npm ci
+
+# ─── Stage 2: build worker bundle ───────────────────────────────────────────
+FROM node:22-alpine AS builder
+WORKDIR /app
+COPY --from=deps /app/node_modules ./node_modules
+COPY . .
+RUN npm run build:worker
+
+# ─── Stage 3: runtime ───────────────────────────────────────────────────────
+FROM node:22-alpine AS runner
+WORKDIR /app
+ENV NODE_ENV=production
+
+RUN addgroup -g 10001 -S app && adduser -u 10001 -S app -G app
+
+# Runtime deps: mongoose + aws sdk are externals in the bundle.
+COPY package.json package-lock.json ./
+COPY --from=deps /app/node_modules ./node_modules
+COPY --from=builder /app/dist-worker ./dist-worker
+
+USER app
+
+# No HEALTHCHECK: the worker polls a queue; readiness == process alive.
+CMD ["node", "dist-worker/index.mjs"]

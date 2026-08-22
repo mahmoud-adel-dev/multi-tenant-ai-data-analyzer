@@ -6,7 +6,6 @@
  * Server Component — no interactivity needed here.
  */
 
-import Link from "next/link";
 
 /** SVG-based AI Pipeline Diagram matching the design screenshot */
 function PipelineDiagram() {

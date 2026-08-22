@@ -1,150 +1,49 @@
 /**
- * @file src/models/ApiKey.ts
- * @description Mongoose schema for Developer API Keys.
- *
- * SECURITY DESIGN:
- * - The full API key is generated ONCE and shown to the user ONCE at creation.
- * - Only a bcrypt hash of the key is stored in the DB (`keyHash`).
- * - The first 8 characters (`keyPrefix`) are stored in plain text for display purposes.
- *
- * MULTI-TENANCY:
- * - Every ApiKey document has a `tenantId` field (indexed) linking it to its owner.
- * - Queries MUST always include `tenantId` to ensure data isolation.
- *
- * AUTHENTICATION FLOW:
- * 1. External request arrives with `Authorization: Bearer sk-xxxx...` header.
- * 2. We extract the key, find the ApiKey doc where `keyPrefix` matches the first 8 chars.
- * 3. We bcrypt.compare the full key against `keyHash`.
- * 4. If valid, we use `tenantId` to load the Tenant and check quotas.
+ * Developer API keys — org-scoped, bcrypt-hashed, shown once.
+ * Supports expiration, per-key rate limits and usage tracking.
  */
-
 import mongoose, { Schema, Document, Model, Types } from "mongoose";
 import { ApiKeyStatus } from "@/types";
 
-// ============================================================
-// TypeScript Interface
-// ============================================================
-
 export interface IApiKey extends Document {
-  /**
-   * MULTI-TENANCY INDEX: Links this key to its owning tenant.
-   * INDEXED — used in every lookup to ensure tenant data isolation.
-   */
-  tenantId: Types.ObjectId;
-
-  /** Human-readable name for the key (e.g., "Production App", "CI Pipeline"). */
+  orgId: Types.ObjectId;
+  createdByUserId: Types.ObjectId | null;
   name: string;
-
-  /**
-   * The first 8 characters of the full key, stored in plain text.
-   * Used for display purposes and as a fast pre-filter before bcrypt comparison.
-   * Example: "sk-Ab1Cd2"
-   */
+  /** First 8 chars of the full key, plaintext — for display + fast lookup. */
   keyPrefix: string;
-
-  /**
-   * bcrypt hash of the FULL API key.
-   * The full key is NEVER stored — only this hash.
-   * Comparison: bcrypt.compare(incomingFullKey, storedKeyHash)
-   */
+  /** bcrypt hash of the FULL key. The full key is never stored. */
   keyHash: string;
-
-  /** Whether this key is active or has been revoked by the tenant. */
   status: ApiKeyStatus;
-
-  /** The last time this key was used to authenticate a request. Null if never used. */
+  rateLimitPerMinute: number;
+  expiresAt: Date | null;
+  revokedAt: Date | null;
   lastUsedAt: Date | null;
-
+  requestCount: number;
   createdAt: Date;
   updatedAt: Date;
 }
 
-// ============================================================
-// Schema Definition
-// ============================================================
-
 const ApiKeySchema = new Schema<IApiKey>(
   {
-    /**
-     * CRITICAL: tenantId MUST be on every document in the multi-tenant system.
-     * ref: "Tenant" enables Mongoose's `.populate()` if needed.
-     */
-    tenantId: {
-      type: Schema.Types.ObjectId,
-      ref: "Tenant",
-      required: [true, "tenantId is required for data isolation."],
-      /**
-       * INDEX: The most common query pattern is:
-       * db.apikeys.find({ tenantId: <id>, status: "active" })
-       * This index makes tenant-scoped lookups extremely fast.
-       */
-      index: true,
-    },
-
-    name: {
-      type: String,
-      required: [true, "API key name is required."],
-      trim: true,
-      maxlength: [60, "Key name cannot exceed 60 characters."],
-    },
-
-    keyPrefix: {
-      type: String,
-      required: true,
-      length: 8, // Always exactly 8 chars: "sk-" + 5 random chars
-    },
-
-    keyHash: {
-      type: String,
-      required: true,
-      /**
-       * Excluded from all query results by default.
-       * Must explicitly `.select("+keyHash")` when doing authentication.
-       */
-      select: false,
-    },
-
-    status: {
-      type: String,
-      enum: Object.values(ApiKeyStatus),
-      default: ApiKeyStatus.ACTIVE,
-    },
-
-    lastUsedAt: {
-      type: Date,
-      default: null,
-    },
+    orgId: { type: Schema.Types.ObjectId, ref: "Organization", required: true },
+    createdByUserId: { type: Schema.Types.ObjectId, ref: "User", default: null },
+    name: { type: String, required: true, trim: true, maxlength: 60 },
+    keyPrefix: { type: String, required: true, length: 8 },
+    keyHash: { type: String, required: true, select: false },
+    status: { type: String, enum: Object.values(ApiKeyStatus), default: ApiKeyStatus.ACTIVE },
+    rateLimitPerMinute: { type: Number, default: 30 },
+    expiresAt: { type: Date, default: null },
+    revokedAt: { type: Date, default: null },
+    lastUsedAt: { type: Date, default: null },
+    requestCount: { type: Number, default: 0 },
   },
-  {
-    timestamps: true,
-    versionKey: false,
-  }
+  { timestamps: true, versionKey: false }
 );
 
-// ============================================================
-// Compound Indexes
-// ============================================================
-
-/**
- * Compound index: tenantId + status.
- * Most common query: "get all active keys for tenant X".
- * db.apikeys.find({ tenantId: x, status: "active" })
- */
-ApiKeySchema.index({ tenantId: 1, status: 1 });
-
-/**
- * Index on keyPrefix for fast pre-filtering during API authentication.
- * When a request comes in, we look up by keyPrefix first (O(log n)),
- * then do the more expensive bcrypt.compare on the smaller result set.
- */
+ApiKeySchema.index({ orgId: 1, status: 1 });
 ApiKeySchema.index({ keyPrefix: 1 });
 
-// ============================================================
-// Model Export (Hot-Reload Safe)
-// ============================================================
-
 const ApiKey: Model<IApiKey> =
-  (mongoose.models.ApiKey as Model<IApiKey>) ||
-  mongoose.model<IApiKey>("ApiKey", ApiKeySchema);
+  (mongoose.models.ApiKey as Model<IApiKey>) || mongoose.model<IApiKey>("ApiKey", ApiKeySchema);
 
 export default ApiKey;

@@ -1,62 +1,43 @@
-/**
- * @file src/app/(dashboard)/dashboard/data-explorer/page.tsx
- * @description SSR Data Explorer page for tenants.
- * Fetches the extraction records server-side based on URL query parameters.
- */
+import Link from "next/link";
+import { requireOrg } from "@/lib/auth/dal";
+import { getDictionary, getServerLocale } from "@/i18n/server";
+import DatasetsClient from "./DatasetsClient";
 
-import { Metadata } from "next";
-import { requireTenantAdmin } from "@/lib/auth/dal";
-import { getExtractedDataList, ExplorerFilters } from "@/actions/data-explorer";
-import ExplorerClient from "@/components/dashboard/ExplorerClient";
-import { ExtractionStatus, SupportedFileType } from "@/types";
+export const metadata = { title: "Datasets" };
+export const dynamic = "force-dynamic";
 
-export const metadata: Metadata = {
-  title: "Data Explorer",
-  description: "View and search your extracted AI data.",
-};
-
-interface PageProps {
-  searchParams: Promise<{ [key: string]: string | string[] | undefined }>;
-}
-
-export default async function DataExplorerPage({ searchParams }: PageProps) {
-  // Auth guard
-  await requireTenantAdmin();
-
-  const resolvedSearchParams = await searchParams;
-
-  // Extract query params for SSR filtering
-  const statusParam = typeof resolvedSearchParams.status === "string" ? resolvedSearchParams.status : "all";
-  const typeParam = typeof resolvedSearchParams.type === "string" ? resolvedSearchParams.type : "all";
-
-  const filters: ExplorerFilters = {};
-  
-  if (statusParam !== "all" && Object.values(ExtractionStatus).includes(statusParam as ExtractionStatus)) {
-    filters.status = statusParam as ExtractionStatus;
-  }
-  
-  if (typeParam !== "all" && Object.values(SupportedFileType).includes(typeParam as SupportedFileType)) {
-    filters.fileType = typeParam as SupportedFileType;
-  }
-
-  // Fetch data server-side
-  const result = await getExtractedDataList(filters);
-
-  if (!result.success) {
-    return (
-      <div style={{ textAlign: "center", padding: "80px 24px" }}>
-        <div style={{ fontSize: "48px", marginBottom: "16px" }}>⚠️</div>
-        <h2 style={{ fontSize: "20px", fontWeight: 700, color: "var(--text-primary)" }}>Failed to load data</h2>
-        <p style={{ fontSize: "14px", color: "var(--text-secondary)", marginTop: "8px" }}>{result.error}</p>
-      </div>
-    );
-  }
+export default async function DataExplorerPage() {
+  await requireOrg();
+  const d = getDictionary(await getServerLocale());
 
   return (
-    <ExplorerClient 
-      initialData={result.data} 
-      initialStatusFilter={statusParam} 
-      initialTypeFilter={typeParam} 
-    />
+    <div>
+      <div className="page-head">
+        <div>
+          <h1 style={{ fontSize: "24px", fontWeight: 800, color: "var(--text-primary)", letterSpacing: "-0.02em", marginBottom: "4px" }}>
+            {d.datasetsPage.title}
+          </h1>
+          <p style={{ fontSize: "14px", color: "var(--text-secondary)" }}>
+            {d.datasetsPage.subtitle}
+          </p>
+        </div>
+        <Link
+          href="/dashboard/upload"
+          style={{
+            padding: "9px 16px",
+            borderRadius: "8px",
+            background: "var(--brand-gradient)",
+            color: "#fff",
+            fontSize: "13px",
+            fontWeight: 600,
+            textDecoration: "none",
+            whiteSpace: "nowrap",
+          }}
+        >
+          {d.datasetsPage.uploadCta}
+        </Link>
+      </div>
+      <DatasetsClient />
+    </div>
   );
 }

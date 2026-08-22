@@ -8,7 +8,7 @@
  */
 
 import { useState } from "react";
-import { AiModelConfigDTO } from "@/types";
+import { AiModelConfigDTO } from "@/types/dto";
 import ModelCard from "@/components/admin/ModelCard";
 import ModelConfigForm from "@/components/admin/ModelConfigForm";
 
@@ -17,7 +17,7 @@ interface ModelsPageClientProps {
 }
 
 export default function ModelsPageClient({ initialConfigs }: ModelsPageClientProps) {
-  const [configs, setConfigs] = useState<AiModelConfigDTO[]>(initialConfigs);
+  const [configs] = useState<AiModelConfigDTO[]>(initialConfigs);
   const [modalOpen, setModalOpen] = useState(false);
   const [editingConfig, setEditingConfig] = useState<AiModelConfigDTO | undefined>();
   const [toast, setToast] = useState<{ msg: string; type: "success" | "error" } | null>(null);

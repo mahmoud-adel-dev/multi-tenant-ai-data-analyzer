@@ -1,49 +1,21 @@
-/**
- * @file src/app/(dashboard)/dashboard/api-keys/page.tsx
- * @description SSR page for tenant API key management.
- *
- * DATA FETCHING:
- * Calls `getApiKeys()` Server Action directly — no API route, no useEffect.
- * The full list is rendered server-side and hydrated on the client.
- */
+import { requireOrg } from "@/lib/auth/dal";
+import ApiKeysClient from "./ApiKeysPageClient";
 
-import { Metadata } from "next";
-import { requireTenantAdmin } from "@/lib/auth/dal";
-import { getApiKeys } from "@/actions/api-keys";
-import { Tenant } from "@/models";
-import connectDB from "@/lib/db";
-import ApiKeysPageClient from "./ApiKeysPageClient";
-
-export const metadata: Metadata = {
-  title: "API Keys",
-  description: "Generate and manage your developer API keys.",
-};
+export const metadata = { title: "API Keys" };
+export const dynamic = "force-dynamic";
 
 export default async function ApiKeysPage() {
-  // Auth guard — also gives us the session.
-  const session = await requireTenantAdmin();
+  const ctx = await requireOrg();
 
-  // Fetch API keys (SSR).
-  const keysResult = await getApiKeys();
-
-  // Fetch tenant quota info for the progress bar.
-  await connectDB();
-  const tenant = await Tenant.findById(session.userId).lean();
-
-  const quota = {
-    used: tenant?.quotas?.usedRequestsThisMonth ?? 0,
-    max:  tenant?.quotas?.maxApiKeys           ?? 5,
-  };
-
-  if (!keysResult.success) {
-    return (
-      <div style={{ textAlign: "center", padding: "80px 24px" }}>
-        <div style={{ fontSize: "48px", marginBottom: "16px" }}>⚠️</div>
-        <h2 style={{ fontSize: "20px", fontWeight: 700, color: "var(--text-primary)" }}>Failed to load API keys</h2>
-        <p style={{ fontSize: "14px", color: "var(--text-secondary)", marginTop: "8px" }}>{keysResult.error}</p>
+  return (
+    <div>
+      <div style={{ marginBottom: "26px" }}>
+        <h1 style={{ fontSize: "24px", fontWeight: 800, color: "var(--text-primary)", marginBottom: "4px" }}>API Keys</h1>
+        <p style={{ fontSize: "14px", color: "var(--text-secondary)" }}>
+          Programmatic access to the analysis pipeline for <strong>{ctx.orgName}</strong>.
+        </p>
       </div>
-    );
-  }
-
-  return <ApiKeysPageClient initialKeys={keysResult.data} quota={quota} />;
+      <ApiKeysClient maxKeys={ctx.limits.maxApiKeys} />
+    </div>
+  );
 }

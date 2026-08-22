@@ -1,0 +1,15 @@
+node_modules
+.build
+.next
+dist-worker
+storage-data
+.tmp-*
+*.log
+.env
+.env.local
+.env.*.local
+.git
+.github
+docs
+tests
+analytics-service/**/__pycache__

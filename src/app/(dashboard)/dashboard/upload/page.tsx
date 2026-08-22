@@ -1,26 +1,45 @@
-import { Metadata } from "next";
-import { requireTenantAdmin } from "@/lib/auth/dal";
+import Link from "next/link";
+import { requireOrg } from "@/lib/auth/dal";
+import { getDictionary, getServerLocale } from "@/i18n/server";
 import UploadClient from "./UploadClient";
-import { getActiveModels } from "@/actions/models";
 
-export const metadata: Metadata = {
-  title: "Upload Data | AIDL Platform",
-  description: "Upload your files and generate AI reports.",
-};
+export const metadata = { title: "Upload Dataset" };
 
 export default async function UploadPage() {
-  await requireTenantAdmin();
-  const modelsResult = await getActiveModels();
-  const models = modelsResult.success ? modelsResult.data : [];
+  const ctx = await requireOrg();
+  const d = getDictionary(await getServerLocale());
 
   return (
-    <main style={{ padding: "32px", maxWidth: "800px", margin: "0 auto" }}>
-      <header style={{ marginBottom: "32px" }}>
-        <h1 style={{ fontSize: "28px", fontWeight: 800, color: "var(--text-primary)", marginBottom: "8px" }}>AI Data Analyzer</h1>
-        <p style={{ fontSize: "14px", color: "var(--text-secondary)" }}>Upload your Excel sheet, write your prompt, and let the AI generate a detailed report.</p>
-      </header>
-
-      <UploadClient initialModels={models} />
-    </main>
+    <div>
+      <div className="page-head">
+        <div>
+          <h1 style={{ fontSize: "24px", fontWeight: 800, color: "var(--text-primary)", letterSpacing: "-0.02em", marginBottom: "6px" }}>
+            {d.upload.title}
+          </h1>
+          <p style={{ fontSize: "14px", color: "var(--text-secondary)", maxWidth: "680px" }}>
+            {d.upload.subtitle}</p>
+        </div>
+        <Link
+          href="/dashboard/data-explorer"
+          style={{
+            padding: "9px 16px",
+            borderRadius: "8px",
+            border: "1px solid var(--border-color)",
+            background: "var(--bg-card)",
+            color: "var(--text-primary)",
+            fontSize: "13px",
+            fontWeight: 600,
+            textDecoration: "none",
+            whiteSpace: "nowrap",
+          }}
+        >
+          View datasets →
+        </Link>
+      </div>
+      <UploadClient
+        maxUploadBytes={ctx.limits.maxUploadBytes}
+        maxRows={ctx.limits.maxRowsPerDataset}
+      />
+    </div>
   );
 }

@@ -1,51 +1,68 @@
 /**
- * @file src/lib/auth/options.ts
- * @description NextAuth.js configuration options.
+ * NextAuth.js configuration.
+ *
+ * Hardening:
+ * - Fail-fast secret from validated env (no fallbacks).
+ * - Session JWT carries only identity claims; authorization is ALWAYS
+ *   re-verified against the database server-side (see lib/auth/dal.ts), so a
+ *   stale role in an old token can never grant access.
+ * - Secure cookies in production, SameSite=Lax, bounded session lifetime.
  */
-
 import { NextAuthOptions } from "next-auth";
 import CredentialsProvider from "next-auth/providers/credentials";
 import bcrypt from "bcryptjs";
 import connectDB from "@/lib/db";
-import { Tenant } from "@/models";
+import { User } from "@/models";
 import { UserRole } from "@/types";
+import { getEnv } from "@/lib/env";
+import { writeAudit } from "@/models";
+import { SESSION_COOKIE_NAME } from "@/lib/auth/cookie";
 
 export const authOptions: NextAuthOptions = {
   providers: [
     CredentialsProvider({
       name: "Credentials",
       credentials: {
-        email: { label: "Email", type: "email", placeholder: "admin@aidl.com" },
+        email: { label: "Email", type: "email" },
         password: { label: "Password", type: "password" },
       },
       async authorize(credentials) {
         if (!credentials?.email || !credentials?.password) {
-          throw new Error("Missing email or password");
+          return null;
         }
-
         await connectDB();
-        
-        const tenant = await Tenant.findOne({ email: credentials.email.toLowerCase() })
-          .select("+passwordHash");
 
-        const dummyHash = "$2a$12$dummyhashfortimingprotection00000000000000000";
-        const hashToCompare = tenant?.passwordHash ?? dummyHash;
-        
-        const isPasswordValid = await bcrypt.compare(credentials.password, hashToCompare);
+        const user = await User.findOne({ email: credentials.email.toLowerCase() }).select("+passwordHash");
 
-        if (!tenant || !isPasswordValid) {
-          throw new Error("Invalid email or password");
+        // Constant-time-ish path: always run one bcrypt compare.
+        const dummyHash = "$2a$12$C6UzMDM.H6dfI/f/IKcEeO7ZBpQqXQhLScPCLxrWlmS1fUoGXvN4a";
+        const isPasswordValid = await bcrypt.compare(
+          credentials.password,
+          user?.passwordHash ?? dummyHash
+        );
+
+        if (!user || !isPasswordValid) {
+          await writeAudit({
+            actorUserId: user?._id?.toString() ?? null,
+            action: "auth.login_failed",
+            resourceType: "user",
+            metadata: { email: credentials.email.toLowerCase() },
+          });
+          return null;
         }
 
-        if (!tenant.isActive) {
-          throw new Error("Account is deactivated");
+        if (!user.isActive) {
+          return null;
         }
+
+        user.lastLoginAt = new Date();
+        await user.save();
 
         return {
-          id: tenant._id.toString(),
-          name: tenant.name,
-          email: tenant.email,
-          role: tenant.role,
+          id: user._id.toString(),
+          name: user.name,
+          email: user.email,
+          role: user.role as UserRole,
         };
       },
     }),
@@ -53,16 +70,15 @@ export const authOptions: NextAuthOptions = {
   callbacks: {
     async jwt({ token, user }) {
       if (user) {
-        // User object is only passed on initial sign-in
         token.id = user.id;
-        token.role = (user as any).role;
+        token.role = user.role;
       }
       return token;
     },
     async session({ session, token }) {
       if (token && session.user) {
-        (session.user as any).userId = token.id;
-        (session.user as any).role = token.role;
+        session.user.userId = token.id as string;
+        session.user.role = token.role as UserRole;
       }
       return session;
     },
@@ -73,6 +89,19 @@ export const authOptions: NextAuthOptions = {
   },
   session: {
     strategy: "jwt",
+    maxAge: 7 * 24 * 60 * 60, // 7 days absolute.
+    updateAge: 24 * 60 * 60,
   },
-  secret: process.env.NEXTAUTH_SECRET || "your-super-secret-key-for-development",
+  cookies: {
+    sessionToken: {
+      name: SESSION_COOKIE_NAME,
+      options: {
+        httpOnly: true,
+        sameSite: "lax",
+        path: "/",
+        secure: getEnv().isProd,
+      },
+    },
+  },
+  secret: getEnv().NEXTAUTH_SECRET,
 };

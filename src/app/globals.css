@@ -151,3 +151,116 @@ body {
   outline: 2px solid var(--accent-primary);
   outline-offset: 2px;
 }
+
+/* ============================================================
+   DASHBOARD GRID UTILITIES
+   ============================================================ */
+.dash-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(400px, 1fr));
+  gap: 18px;
+}
+@media (min-width: 1600px) {
+  .dash-grid { grid-template-columns: repeat(auto-fill, minmax(480px, 1fr)); }
+}
+.dash-span-2 {
+  grid-column: span 1;
+}
+@media (min-width: 900px) {
+  .dash-span-2 { grid-column: span 2; }
+}
+.kpi-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(170px, 1fr));
+  gap: 14px;
+}
+
+/* ============================================================
+   PAGE LAYOUT UTILITIES (dense dashboard shell)
+   ============================================================ */
+.page-head {
+  display: flex;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: 16px;
+  flex-wrap: wrap;
+  margin-bottom: 26px;
+}
+
+.upload-grid {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: 20px;
+}
+@media (min-width: 1024px) {
+  .upload-grid { grid-template-columns: minmax(0, 1fr) 300px; align-items: start; }
+}
+
+.panel {
+  background: var(--bg-card);
+  border: 1px solid var(--border-subtle);
+  border-radius: 14px;
+  padding: 18px;
+}
+
+.skeleton {
+  position: relative;
+  overflow: hidden;
+  background: var(--bg-secondary);
+  border-radius: 8px;
+}
+.skeleton::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  transform: translateX(-100%);
+  background: linear-gradient(90deg, transparent, rgba(127, 127, 180, 0.12), transparent);
+  animation: shimmer-slide 1.6s infinite;
+}
+@keyframes shimmer-slide { to { transform: translateX(100%); } }
+
+.home-grid { display: grid; grid-template-columns: minmax(0, 1fr); }
+@media (min-width: 1100px) {
+  .home-grid { grid-template-columns: minmax(0, 1.7fr) minmax(300px, 1fr); align-items: start; }
+}
+
+/* ============================================================
+   RTL (Arabic) SUPPORT
+   Flexbox/grid flip automatically with dir="rtl"; these rules
+   handle the physically-styled leftovers.
+   ============================================================ */
+[dir="rtl"] .app-sidebar {
+  border-right: none;
+  border-left: 1px solid var(--border-color);
+}
+[dir="rtl"] th,
+[dir="rtl"] td,
+[dir="rtl"] .panel {
+  text-align: start;
+}
+[dir="rtl"] table th { text-align: start; }
+
+/* ============================================================
+   PRINT (report PDF export)
+   ============================================================ */
+@media print {
+  body * {
+    visibility: hidden;
+  }
+  .print-area, .print-area * {
+    visibility: visible;
+    color: #111 !important;
+    background: #fff !important;
+    border-color: #ddd !important;
+    box-shadow: none !important;
+  }
+  .print-area {
+    position: absolute;
+    inset: 0 auto auto 0;
+    width: 100%;
+    padding: 0;
+  }
+  .no-print {
+    display: none !important;
+  }
+}

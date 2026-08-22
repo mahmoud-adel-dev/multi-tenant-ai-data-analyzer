@@ -55,7 +55,6 @@ export function parseExcel(buffer: Buffer): ExcelParseResult {
   const workbook = XLSX.read(buffer, {
     type:      "buffer",
     cellDates: true,
-    defval:    "",
   });
 
   const sheetNames = workbook.SheetNames;

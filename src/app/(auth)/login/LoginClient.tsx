@@ -35,7 +35,7 @@ export default function LoginClient() {
       setError(result.error);
       setIsLoading(false);
     } else {
-      router.push("/dashboard/api-keys");
+      router.push("/dashboard");
       router.refresh();
     }
   };

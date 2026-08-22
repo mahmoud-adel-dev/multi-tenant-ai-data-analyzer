@@ -14,14 +14,10 @@
  */
 
 import mongoose from "mongoose";
+import { getEnv } from "@/lib/env";
+import { logger } from "@/lib/logger";
 
-const MONGODB_URI = process.env.MONGODB_URI;
-
-if (!MONGODB_URI) {
-  throw new Error(
-    "Please define the MONGODB_URI environment variable in .env.local"
-  );
-}
+const MONGODB_URI = getEnv().MONGODB_URI;
 
 /**
  * @interface MongooseCache
@@ -39,7 +35,6 @@ interface MongooseCache {
  * This prevents TypeScript from complaining about a non-existent property on `global`.
  */
 declare global {
-  // eslint-disable-next-line no-var
   var mongoose: MongooseCache | undefined;
 }
 
@@ -87,15 +82,15 @@ async function connectDB(): Promise<typeof mongoose> {
 
     // 3. Create the connection promise and cache it.
     cached.promise = mongoose
-      .connect(MONGODB_URI!, options)
+      .connect(MONGODB_URI, options)
       .then((mongooseInstance) => {
-        console.log("✅ MongoDB connected successfully.");
+        logger.info("MongoDB connected", { service: "db" });
         return mongooseInstance;
       })
       .catch((error) => {
         // Reset the promise cache on failure so the next call can retry.
         cached.promise = null;
-        console.error("❌ MongoDB connection failed:", error);
+        logger.error("MongoDB connection failed", { error: String(error), service: "db" });
         throw error;
       });
   }

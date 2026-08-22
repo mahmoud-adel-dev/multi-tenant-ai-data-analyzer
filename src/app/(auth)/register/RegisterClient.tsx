@@ -90,9 +90,9 @@ export default function RegisterClient() {
           value={password}
           onChange={(e) => setPassword(e.target.value)}
           required
-          minLength={8}
+          minLength={10}
           style={{ width: "100%", padding: "12px 16px", borderRadius: "10px", background: "var(--bg-primary)", border: "1px solid var(--border-color)", color: "var(--text-primary)", fontSize: "14px", outline: "none", transition: "border-color 0.2s" }}
-          placeholder="Min 8 characters"
+          placeholder="10+ chars, upper/lowercase and number"
           onFocus={(e) => e.target.style.borderColor = "var(--accent-primary)"}
           onBlur={(e) => e.target.style.borderColor = "var(--border-color)"}
         />

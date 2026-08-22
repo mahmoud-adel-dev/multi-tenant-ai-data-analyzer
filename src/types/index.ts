@@ -1,121 +1,132 @@
 /**
- * @file src/types/index.ts
- * @description Global TypeScript type definitions and enums shared across the application.
- * Mongoose-specific interfaces live alongside their schemas in src/models/.
+ * Global TypeScript type definitions and enums shared across the application.
  */
 
 // ============================================================
-// ENUMS
+// AUTH / ROLES
 // ============================================================
 
-/**
- * Defines the role levels within the application.
- * - SUPER_ADMIN: Platform owner; manages AI model configs and all tenants.
- * - TENANT_ADMIN: Company/organization admin; manages their own API keys and data.
- * - TENANT_USER: Read-only member of a tenant; can only view data.
- */
+/** Platform-level role. Organization roles live on OrganizationMember. */
 export enum UserRole {
-  SUPER_ADMIN = "super_admin",
-  TENANT_ADMIN = "tenant_admin",
-  TENANT_USER = "tenant_user",
+  USER = "user",
+  PLATFORM_ADMIN = "platform_admin",
 }
 
-/**
- * Supported AI model provider types.
- * - CLOUD: External API-based providers (OpenAI, Anthropic, Google, etc.).
- * - LOCAL: Self-hosted models (Ollama, LocalAI, etc.).
- */
+export type OrgRole = "owner" | "admin" | "analyst" | "member" | "viewer";
+
+export const ORG_ROLES: OrgRole[] = ["owner", "admin", "analyst", "member", "viewer"];
+
+const ROLE_RANK: Record<OrgRole, number> = { owner: 50, admin: 40, analyst: 30, member: 20, viewer: 10 };
+
+export function roleAtLeast(role: OrgRole, min: OrgRole): boolean {
+  return ROLE_RANK[role] >= ROLE_RANK[min];
+}
+
+// ============================================================
+// AI PROVIDERS
+// ============================================================
+
 export enum ModelProviderType {
   CLOUD = "cloud",
   LOCAL = "local",
 }
 
-/**
- * Status of an API key.
- */
+// ============================================================
+// API KEYS
+// ============================================================
+
 export enum ApiKeyStatus {
   ACTIVE = "active",
   REVOKED = "revoked",
 }
 
+// ============================================================
+// PIPELINES
+// ============================================================
+
 /**
- * Processing status for a data extraction job.
+ * Architecturally separated pipelines. Tabular business analytics and
+ * document extraction are different products with different guarantees.
  */
-export enum ExtractionStatus {
-  PENDING = "pending",
+export enum PipelineType {
+  TABULAR_DATA = "tabular_data",
+  DOCUMENT_EXTRACTION = "document_extraction",
+  IMAGE_OCR = "image_ocr",
+}
+
+export enum DatasetFileType {
+  CSV = "csv",
+  TSV = "tsv",
+  XLSX = "xlsx",
+  XLS = "xls",
+  JSON = "json",
+}
+
+export enum DatasetStatus {
+  UPLOADING = "uploading",
+  READY = "ready",
   PROCESSING = "processing",
+  FAILED = "failed",
+  DELETED = "deleted",
+}
+
+export enum JobStatus {
+  CREATED = "created",
+  QUEUED = "queued",
+  SCANNING = "scanning",
+  PARSING = "parsing",
+  PROFILING = "profiling",
+  ANALYZING = "analyzing",
+  GENERATING_DASHBOARD = "generating_dashboard",
+  GENERATING_REPORT = "generating_report",
+  COMPLETED = "completed",
+  FAILED = "failed",
+  CANCELLED = "cancelled",
+}
+
+/** Terminal states — no further transitions allowed. */
+export const TERMINAL_JOB_STATUSES: JobStatus[] = [JobStatus.COMPLETED, JobStatus.FAILED, JobStatus.CANCELLED];
+
+export enum RunStatus {
+  RUNNING = "running",
   COMPLETED = "completed",
   FAILED = "failed",
 }
 
-/**
- * Supported file types for data ingestion.
- */
-export enum SupportedFileType {
-  EXCEL = "excel",
-  JSON = "json",
-  PDF = "pdf",
-  IMAGE = "image",
+export enum AnalysisRunStatus {
+  RUNNING = "running",
+  COMPLETED = "completed",
+  FAILED = "failed",
 }
 
 // ============================================================
-// SHARED PLAIN OBJECT TYPES
-// (Used for data passed to Client Components — must be serializable,
-//  i.e., no Mongoose Document methods, no Date objects → use ISO strings)
+// BILLING
 // ============================================================
 
-/** Plain-object representation of a Tenant, safe to pass to Client Components. */
-export interface TenantDTO {
-  id: string;
-  name: string;
+export enum SubscriptionStatus {
+  ACTIVE = "active",
+  TRIALING = "trialing",
+  PAST_DUE = "past_due",
+  CANCELED = "canceled",
+  PAUSED = "paused",
+}
+
+export type UsageMetric =
+  | "jobs"
+  | "upload_bytes"
+  | "rows_analyzed"
+  | "ai_tokens_in"
+  | "ai_tokens_out"
+  | "reports_generated"
+  | "storage_bytes";
+
+// ============================================================
+// SERIALIZABLE DTO HELPERS
+// ============================================================
+
+export interface SessionUserPayload {
+  userId: string;
   email: string;
+  name: string;
   role: UserRole;
-  isActive: boolean;
-  /** ISO date string */
-  createdAt: string;
-  quotas: {
-    maxApiKeys: number;
-    maxRequestsPerMonth: number;
-    usedRequestsThisMonth: number;
-  };
-}
-
-/** Plain-object representation of an API Key, safe for Client Components. */
-export interface ApiKeyDTO {
-  id: string;
-  tenantId: string;
-  name: string;
-  /** The masked key (e.g., "sk-...abcd"). The full key is shown ONLY once at creation. */
-  maskedKey: string;
-  status: ApiKeyStatus;
-  lastUsedAt: string | null;
-  createdAt: string;
-}
-
-/** Plain-object representation of an AI Model Config. */
-export interface AiModelConfigDTO {
-  id: string;
-  name: string;
-  providerType: ModelProviderType;
-  modelIdentifier: string;
-  baseUrl: string;
-  isActive: boolean;
-  /** Optional notes about cost, performance, or use case. */
-  description?: string;
-  /** API key is intentionally omitted from DTOs — never sent to the client. */
-  createdAt: string;
-}
-
-/** Plain-object representation of an Extracted Data record. */
-export interface ExtractedDataDTO {
-  id: string;
-  tenantId: string;
-  fileName: string;
-  fileType: SupportedFileType;
-  status: ExtractionStatus;
-  /** The structured JSON output from the AI model. */
-  result: Record<string, unknown> | null;
-  errorMessage: string | null;
-  createdAt: string;
-  updatedAt: string;
 }
